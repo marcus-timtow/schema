@@ -18,7 +18,7 @@
             return that[dep.split("/").pop()];
         }));
     }
-})("Schema", ["./utils", "./parser"], function (utils, parser) {
+})("SchemaFactory", ["../utils/utils", "../parser/parser"], function (utils, parser) {
 
     /**
      * Tests if the SchematizedObjects schematized by the Schema schemadesc 
