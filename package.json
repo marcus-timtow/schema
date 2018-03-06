@@ -1,0 +1,20 @@
+{
+  "name": "schema",
+  "version": "1.0.0",
+  "main": "schema.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marcus-timtow/schema.git"
+  },
+  "dependencies": {
+    "utils": "git://github.com/marcus-timtow/utils.git",
+    "parser": "git://github.com/marcus-timtow/parser.git"
+  },
+  "keywords": ["schema", "parser", "stringifier"],
+  "author": "Marcus Timtow",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/marcus-timtow/schema/issues"
+  },
+  "homepage": "https://github.com/marcus-timtow/schema"
+}
