@@ -215,7 +215,7 @@
     };
     let _enforceType = function (schema, type, valuetype, key) {
         if (valuetype !== type) {
-            let err = new Error("invalid " + key + " value: " + valuetype + ". value must be typed " + type);
+            let err = new Error("invalid " + key + " type: " + valuetype + ". value must be typed " + type);
             throw makeError(schema, key, valuetype, err);
         }
     };
