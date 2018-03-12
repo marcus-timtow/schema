@@ -20,129 +20,7 @@
     }
 })("SchemaFactory", ["../utils/utils", "../parser/parser"], function (utils, parser) {
 
-    /**
-     * Tests if the SchematizedObjects schematized by the Schema schemadesc 
-     * can be converted to PSO (PathStringObject @see PS)
-     * 
-     * @param {SchemaDescriptor} schemadesc 
-     * @returns {boolean} 
-     */
-    let _testSchematizedObjectPSO = function (schemadesc) {
-        if (schemadesc.type === "function") {
-            return false;
-        } else if (schemadesc.type === "array") {
-            return false;
-        } else if (schemadesc.type === "object") {
-            if (!schemadesc.schema) {
-                return false;
-            } else {
-                for (let prop in schemadesc.schema) {
-                    if (!_testSchematizedObjectPSO(schemadesc.schema[prop])) {
-                        return false;
-                    }
-                }
-                return true;
-            }
-        } else {
-            return true;
-        }
-    };
-
-    /**
-     * Converts the schema (not a schematized object) to a QSO (QueryStringObject @see QS)
-     * 
-     * @param {SchemaDescriptor} schemadesc 
-     * @returns {QSO} 
-     */
-    let _makeSchemaQSO = function (schemadesc) {
-        let qso = null;
-        try {
-            qso = parser.stringifyToQSO(schemadesc);
-        } catch (err) {
-
-        }
-        return qso;
-    };
-
-    /**
-     * Tests if the SchematizedObjects schematized by the Schema schemadesc 
-     * can be converted to QSO (QueryStringObject @see QS)
-     * 
-     * @param {SchemaDescriptor} schemadesc 
-     * @param {boolean} flag Internal use only.
-     * @returns {boolean} 
-     */
-    let _testSchematizedObjectQSO = function (schemadesc, flag) {
-        if (schemadesc.type === "function") {
-            return false;
-        } else if (schemadesc.type === "array") {
-            if (flag) {
-                return false;
-            } else if (!schemadesc.schema) {
-                return false;
-            } else {
-                return _testSchematizedObjectQSO(schemadesc.schema, true);
-            }
-        } else if (schemadesc.type === "object") {
-            if (flag) {
-                return false;
-            } else if (!schemadesc.schema) {
-                return false;
-            } else {
-                for (let prop in schemadesc.schema) {
-                    if (!_testSchematizedObjectQSO(schemadesc.schema[prop])) {
-                        return false;
-                    }
-                }
-                return true;
-            }
-        } else {
-            return true;
-        }
-    };
-
-    /**
-     * Converts the schema (not a schematized object) to a JSON object
-     * 
-     * @param {SchemaDescriptor} schemadesc 
-     * @returns {JSON object} 
-     */
-    let _makeSchemaJSON = function (schemadesc) {
-        let json = null;
-        try {
-            json = parser.stringifyToJSON(schemadesc);
-        } catch (err) {
-
-        }
-        return json;
-    };
-
-    /**
-     * Tests if the SchematizedObjects schematized by the Schema schemadesc 
-     * can be converted to JSON
-     * 
-     * @param {SchemaDescriptor} schemadesc 
-     * @returns {boolean} 
-     */
-    let _testSchematizedObjectJSON = function (schemadesc) {
-        if (schemadesc.type === "function") {
-            return false;
-        } else if (schemadesc.type === "array") {
-            return !!schemadesc.schema && _testSchematizedObjectJSON(schemadesc.schema);
-        } else if (schemadesc.type === "object") {
-            if (!schemadesc.schema) {
-                return false;
-            }
-            for (let prop in schemadesc.schema) {
-                if (!_testSchematizedObjectJSON(schemadesc.schema[prop])) {
-                    return false;
-                }
-            }
-            return true;
-        } else {
-            return true;
-        }
-    };
+    const DEFAULT_ROOT_KEY = "target";
 
     let makeError = function (schema, key, value, err) {
         if (schema.onerror) {
@@ -220,118 +98,134 @@
         }
     };
 
-    var Schema = function () {};
-    Schema.prototype.enforce = function (value, expend, key) {
-        if (typeof expend === "string") {
-            key = expend;
-            expend = false;
-        }
-        key = key || "target"; // used by error messages
-        if (expend && typeof value === "undefined") {
-            value = utils.clone(this.default);
-        }
-        if (typeof value === "undefined") {
-            if (!this.optional) {
-                let err = new Error("invalid " + key + " value: " + "property required");
-                throw makeError(this, key, value, err);
-            } else {
-                return undefined;
-            }
-        }
-        return value;
+    var Schema = function (schemadescriptor) {
+        this.default = schemadescriptor.default;
+        this.optional = schemadescriptor.optional;
+        this.eq = schemadescriptor.eq;
+        this.in = schemadescriptor.in;
+        this.test = schemadescriptor.test;
+        this.onerror = schemadescriptor.onerror;
     };
-
-
-    var PrimitiveSchema = function () {
-        this.qso = null;
-        this.json = null;
-    };
-    PrimitiveSchema.prototype = new Schema();
-    PrimitiveSchema.prototype.primitive = true;
-    PrimitiveSchema.prototype.rget = function (attr) {
+    Schema.prototype.rget = function (attr) {
         if (!attr || attr.length === 0) {
             return this;
         }
     };
-    PrimitiveSchema.prototype.toPSO = function (so) {
-        return parser.stringifyToPSO(so);
-    };
-    PrimitiveSchema.prototype.toQSO = function (so) {
-        if (so) {
-            return parser.stringifyToQSO(so);
-        } else {
-            if (!this.qso) {
-                throw new Error("this schema cannot be converted to QSO");
-            }
-            return utils.clone(this.qso);
+
+
+    /**
+     * Converts a Schematized Object to a StringObject.
+     * 
+     * @param {SchematizedObject} so
+     * @param {boolean} [strict=true] In strict mode the schema will be tested to 
+     * determine if all the objects it schematize can be converted to StringObjects.
+     * If it fails, this method won't attempt to stringify the SchematizedObject and will 
+     * directly throw an error. If strict mode is disabled, the SchematizedObject will 
+     * be trimmed from all necessary properties to represent it as a StringObject.
+     * @returns {SO}
+     * 
+     * @throws {Error} cannot be converted to SO
+     */
+    Schema.prototype.toSO = function (so, strict) {
+        strict = strict === false ? false : true;
+        if (strict && !this.hasRepresentation("so")) {
+            throw new Error("objects enforced by this schema cannot be converted to StringObjects");
         }
+        return parser.stringifyToSO(so);
     };
-    PrimitiveSchema.prototype.toJSON = function (so) {
-        if (so) {
-            return parser.stringifyToJSON(so);
-        } else {
-            if (!this.json) {
-                throw new Error("this schema cannot be converted to JSON");
-            }
-            return utils.clone(this.json);
+    /**
+     * Converts a Schematized Object to a JSON object.
+     * 
+     * @param {SchematizedObject} so
+     * @param {boolean} [strict=true] In strict mode the schema will be tested to 
+     * determine if all the objects it schematize can be converted to JSON objects.
+     * If it fails, this method won't attempt to stringify the SchematizedObject and will 
+     * directly throw an error. If strict mode is disabled, the SchematizedObject will 
+     * be trimmed from all necessary properties to represent it as a JSON object.
+     * @returns {JSON object}
+     * 
+     * @throws {Error} cannot be converted to JSON
+     */
+    Schema.prototype.toJSON = function (so, strict) {
+        strict = strict === false ? false : true;
+        if (strict && !this.hasRepresentation("so")) {
+            throw new Error("objects enforced by this schema cannot be converted to JSON objects");
         }
-    };
-    PrimitiveSchema.prototype.fromPSO = function (psoso, noenforce) {
-        if (typeof psoso === "string") {
-            psoso = parser.parse(this.type, psoso);
-        } else {
-            throw new Error("invalid target PSO");
-        }
-        return noenforce ? psoso : this.enforce(psoso); // if head of recursive pile, enforce the schema
-    };
-    PrimitiveSchema.prototype.fromQSO = function (qsoso, noenforce) {
-        if (typeof qsoso === "string") {
-            qsoso = parser.parse(this.type, qsoso);
-        } else {
-            throw new Error("invalid target QSO");
-        }
-        return noenforce ? qsoso : this.enforce(qsoso); // if head of recursive pile, enforce the schema
-    };
-    PrimitiveSchema.prototype.fromJSON = function (jsonso, noenforce) {
-        jsonso = parser.parse(this.type, jsonso);
-        return noenforce ? jsonso : this.enforce(jsonso);
+        return parser.stringifyToJSON(so);
     };
 
-    PrimitiveSchema.prototype.expend = function (value) {
-        if (typeof value === "undefined") {
-            value = utils.clone(this.default);
+    Schema.prototype.enforce = function (value, key) {
+        if (value === undefined) {
+            if (this.optional) {
+                return undefined;
+            } else {
+                value = this.makeDefault();
+                if (value === undefined) {
+                    key = key || DEFAULT_ROOT_KEY;
+                    let err = new Error("invalid " + key + " value: " + "property required");
+                    throw makeError(this, key, value, err);
+                }
+            }
         }
+        _enforceType(this, this.type, utils.typeof(value), key);
         return value;
     };
-    PrimitiveSchema.prototype.reduce = function (value) {
-        if (typeof value === "undefined") {
+
+    Schema.prototype.reduce = function (value) {
+        if (value === undefined) {
             return undefined; // already reduced
         }
         return utils.equals(value, this.default) ? undefined : value;
     };
 
-    var StringSchema = function (schema) {
-        this.default = schema.default;
-        this.optional = schema.optional;
-        this.eq = schema.eq;
-        this.in = schema.in;
-        this.min = schema.min;
-        this.max = schema.max;
-        this.regex = schema.regex;
-        this.test = schema.test;
-        this.onerror = schema.onerror;
-
-        this.qso = _makeSchemaQSO(schema);  // if the schema can be QueryStringObject-ified
-        this.json = _makeSchemaJSON(schema); // if the schema can be JSON-ified
-    };
-    StringSchema.prototype = new PrimitiveSchema();
-    StringSchema.prototype.type = "string";
-    StringSchema.prototype.enforce = function (value, expend, key) {
-        value = Schema.prototype.enforce.call(this, value, expend, key);
-        if (typeof value === "undefined") {
-            return;
+    Schema.prototype.expend = function (value) {
+        if (value === undefined) {
+            value = utils.clone(this.default);
         }
-        _enforceType(this, "string", typeof value, key);
+        return value;
+    };
+
+    Schema.prototype.makeDefault = function () {
+        return utils.clone(this.default);
+    };
+
+
+    var PrimitiveSchema = function (schemadescriptor) {
+        Schema.call(this, schemadescriptor);
+    };
+    PrimitiveSchema.prototype = Object.create(Schema.prototype);
+    PrimitiveSchema.prototype.hasRepresentation = function (rep) {
+        return ["string", "qs", "so", "json"].includes(rep);
+    };
+    PrimitiveSchema.prototype.fromSO = function (soso, strict, noenforce) {
+        if (soso !== undefined) { // don't parse if undefined (optional?)
+            soso = parser.parse(this.type, soso);
+        }
+        return noenforce ? soso : this.enforce(soso, false); // if head of recursive pile, enforce the schema
+    };
+    PrimitiveSchema.prototype.fromJSON = function (jsonso, strict, noenforce) {
+        if (typeof jsonso === "string") { // don't parse if undefined (optional?) + json so numbers/boolean must not be reparsed
+            jsonso = parser.parse(this.type, jsonso);
+        }
+        return noenforce ? jsonso : this.enforce(jsonso, false);
+    };
+
+
+
+    var StringSchema = function (schemadescriptor) {
+        PrimitiveSchema.call(this, schemadescriptor);
+        this.min = schemadescriptor.min;
+        this.max = schemadescriptor.max;
+        this.regex = schemadescriptor.regex;
+    };
+    StringSchema.prototype = Object.create(PrimitiveSchema.prototype);
+    StringSchema.prototype.type = "string";
+    StringSchema.prototype.enforce = function (value, key) {
+        key = key || DEFAULT_ROOT_KEY;
+        value = Schema.prototype.enforce.call(this, value, key);
+        if (value === undefined) {
+            return value;
+        }
         _enforceEq(this, this.eq, value, key);
         _enforceIn(this, this.in, value, key);
         _enforceMin(this, this.min, value.length, key);
@@ -342,57 +236,41 @@
     };
 
 
-    var NumberSchema = function (schema) {
-        this.default = schema.default;
-        this.optional = schema.optional;
-        this.eq = schema.eq;
-        this.in = schema.in;
-        this.min = schema.min;
-        this.max = schema.max;
-        this.nan = schema.nan;
-        this.test = schema.test;
-        this.onerror = schema.onerror;
-
-        this.qso = _makeSchemaQSO(schema);  // if the schema can be QueryStringObject-ified
-        this.json = _makeSchemaJSON(schema); // if the schema can be JSON-ified
+    var NumberSchema = function (schemadescriptor) {
+        PrimitiveSchema.call(this, schemadescriptor);
+        this.min = schemadescriptor.min;
+        this.max = schemadescriptor.max;
+        this.nan = schemadescriptor.nan;
     };
-    NumberSchema.prototype = new PrimitiveSchema();
+    NumberSchema.prototype = Object.create(PrimitiveSchema.prototype);
     NumberSchema.prototype.type = "number";
-    NumberSchema.prototype.enforce = function (value, expend, key) {
-        value = Schema.prototype.enforce.call(this, value, expend, key);
-        if (typeof value === "undefined") {
-            return;
+    NumberSchema.prototype.enforce = function (value, key) {
+        key = key || DEFAULT_ROOT_KEY;
+        value = Schema.prototype.enforce.call(this, value, key);
+        if (value === undefined) {
+            return value;
         }
-        _enforceType(this, "number", typeof value, key);
         _enforceEq(this, this.eq, value, key);
         _enforceIn(this, this.in, value, key);
-        !this.nan && _enforceNan(this, value, key);
         _enforceMin(this, this.min, value, key);
         _enforceMax(this, this.max, value, key);
+        !this.nan && _enforceNan(this, value, key);
         _enforceTest(this, this.test, value, key);
         return value;
     };
 
 
-    var BooleanSchema = function (schema) {
-        this.default = schema.default;
-        this.optional = schema.optional;
-        this.eq = schema.eq;
-        this.in = schema.in;
-        this.test = schema.test;
-        this.onerror = schema.onerror;
-
-        this.qso = _makeSchemaQSO(schema);  // if the schema can be QueryStringObject-ified
-        this.json = _makeSchemaJSON(schema); // if the schema can be JSON-ified
+    var BooleanSchema = function (schemadescriptor) {
+        PrimitiveSchema.call(this, schemadescriptor);
     };
-    BooleanSchema.prototype = new PrimitiveSchema();
+    BooleanSchema.prototype = Object.create(PrimitiveSchema.prototype);
     BooleanSchema.prototype.type = "boolean";
-    BooleanSchema.prototype.enforce = function (value, expend, key) {
-        value = Schema.prototype.enforce.call(this, value, expend, key);
-        if (typeof value === "undefined") {
-            return;
+    BooleanSchema.prototype.enforce = function (value, key) {
+        key = key || DEFAULT_ROOT_KEY;
+        value = Schema.prototype.enforce.call(this, value, key);
+        if (value === undefined) {
+            return value;
         }
-        _enforceType(this, "boolean", typeof value, key);
         _enforceEq(this, this.eq, value, key);
         _enforceIn(this, this.in, value, key);
         _enforceTest(this, this.test, value, key);
@@ -400,28 +278,19 @@
     };
 
 
-    var DateSchema = function (schema) {
-        this.default = schema.default;
-        this.optional = schema.optional;
-        this.eq = schema.eq;
-        this.in = schema.in;
-        this.min = schema.min && schema.min.getTime();
-        this.max = schema.max && schema.max.getTime();
-        this.test = schema.test;
-        this.onerror = schema.onerror;
-
-        this.qso = _makeSchemaQSO(schema);  // if the schema can be QueryStringObject-ified
-        this.json = _makeSchemaJSON(schema); // if the schema can be JSON-ified
+    var DateSchema = function (schemadescriptor) {
+        PrimitiveSchema.call(this, schemadescriptor);
+        this.min = schemadescriptor.min && schemadescriptor.min.getTime();
+        this.max = schemadescriptor.max && schemadescriptor.max.getTime();
     };
-    DateSchema.prototype = new PrimitiveSchema();
+    DateSchema.prototype = Object.create(PrimitiveSchema.prototype);
     DateSchema.prototype.type = "date";
-    DateSchema.prototype.enforce = function (value, expend, key) {
-        value = Schema.prototype.enforce.call(this, value, expend, key);
-        if (typeof value === "undefined") {
-            return;
+    DateSchema.prototype.enforce = function (value, key) {
+        key = key || DEFAULT_ROOT_KEY;
+        value = Schema.prototype.enforce.call(this, value, key);
+        if (value === undefined) {
+            return value;
         }
-        let type = (value instanceof Date ? "date" : "nodate");
-        _enforceType(this, "date", type, key);
         _enforceEq(this, this.eq, value, key);
         _enforceIn(this, this.in, value, key);
         _enforceMin(this, this.min, value.getTime(), key);
@@ -431,25 +300,17 @@
     };
 
 
-    var RegexSchema = function (schema) {
-        this.default = schema.default;
-        this.optional = schema.optional;
-        this.eq = schema.eq;
-        this.in = schema.in;
-        this.test = schema.test;
-        this.onerror = schema.onerror;
-
-        this.qso = _makeSchemaQSO(schema);  // if the schema can be QueryStringObject-ified
-        this.json = _makeSchemaJSON(schema); // if the schema can be JSON-ified
+    var RegexSchema = function (schemadescriptor) {
+        PrimitiveSchema.call(this, schemadescriptor);
     };
-    RegexSchema.prototype = new PrimitiveSchema();
+    RegexSchema.prototype = Object.create(PrimitiveSchema.prototype);
     RegexSchema.prototype.type = "regex";
-    RegexSchema.prototype.enforce = function (value, expend, key) {
-        value = Schema.prototype.enforce.call(this, value, expend, key);
-        if (typeof value === "undefined") {
-            return;
+    RegexSchema.prototype.enforce = function (value, key) {
+        key = key || DEFAULT_ROOT_KEY;
+        value = Schema.prototype.enforce.call(this, value, key);
+        if (value === undefined) {
+            return value;
         }
-        _enforceType(this, "regex", value instanceof RegExp ? "regex" : "noregex", key);
         _enforceEq(this, this.eq, value, key);
         _enforceIn(this, this.in, value, key);
         _enforceTest(this, this.test, value, key);
@@ -458,188 +319,117 @@
 
 
 
-    var FunctionSchema = function (schema) {
-        this.default = schema.default;
-        this.optional = schema.optional;
-        this.eq = schema.eq;
-        this.in = schema.in;
-        this.test = schema.test;
-        this.onerror = schema.onerror;
-
-        this.qso = _makeSchemaQSO(schema);  // if the schema can be QueryStringObject-ified
-        this.json = _makeSchemaJSON(schema); // if the schema can be JSON-ified
+    var FunctionSchema = function (schemadescriptor) {
+        Schema.call(this, schemadescriptor);
     };
-    FunctionSchema.prototype = new Schema();
+    FunctionSchema.prototype = Object.create(Schema.prototype);
     FunctionSchema.prototype.type = "function";
-    FunctionSchema.prototype.rget = function (attr) {
-        if (!attr || attr.length === 0) {
-            return this;
+    FunctionSchema.prototype.hasRepresentation = function (rep) {
+        return false;
+    };
+    FunctionSchema.prototype.fromSO = function (soso, strict, noenforce) {
+        strict = strict === false ? false : true;
+        if (strict) {
+            throw new Error("cannot parse a function from a StringObject");
         }
+        return noenforce ? undefined : this.enforce(undefined, false);
     };
-    FunctionSchema.prototype.toPSO = function (so) {
-        throw new Error("cannot convert a function to PSO");
-    };
-    FunctionSchema.prototype.toQSO = function (so) {
-        if (so) {
-            throw new Error("cannot convert a function to QSO");
-        } else {
-            if (!this.qso) {
-                throw new Error("this schema cannot be converted to QSO");
-            }
-            return utils.clone(this.qso);
+    FunctionSchema.prototype.fromJSON = function (jsonso, strict, noenforce) {
+        strict = strict === false ? false : true;
+        if (strict) {
+            throw new Error("cannot parse a function from a JSON object");
         }
-    };
-    FunctionSchema.prototype.toJSON = function (so) {
-        if (so) {
-            throw new Error("cannot convert a function to JSON");
-        } else {
-            if (!this.json) {
-                throw new Error("this schema cannot be converted to JSON");
-            }
-            return utils.clone(this.json);
-        }
-    };
-    FunctionSchema.prototype.fromPSO = function () {
-        throw new Error("cannot parse a function from PSO");
-    };
-    FunctionSchema.prototype.fromQSO = function () {
-        throw new Error("cannot parse a function from QSO");
-    };
-    FunctionSchema.prototype.fromJSON = function () {
-        throw new Error("cannot parse a function from JSON");
+        return noenforce ? undefined : this.enforce(undefined, false);
     };
 
-    FunctionSchema.prototype.enforce = function (value, expend, key) {
-        value = Schema.prototype.enforce.call(this, value, expend, key);
-        if (typeof value === "undefined") {
-            return;
+    FunctionSchema.prototype.enforce = function (value, key) {
+        key = key || DEFAULT_ROOT_KEY;
+        value = Schema.prototype.enforce.call(this, value, key);
+        if (value === undefined) {
+            return value;
         }
-        _enforceType(this, "function", typeof value, key);
         _enforceEq(this, this.eq, value, key);
         _enforceIn(this, this.in, value, key);
         _enforceTest(this, this.test, value, key);
         return value;
     };
-    FunctionSchema.prototype.expend = function (value) {
-        if (typeof value === "undefined") {
-            value = utils.clone(this.default);
-        }
-        return value || this.default;
+
+
+
+    var ArraySchema = function (schemadescriptor) {
+        Schema.call(this, schemadescriptor);
+        this.min = schemadescriptor.min;
+        this.max = schemadescriptor.max;
+        this.schema = schemadescriptor.schema && SchemaFactory.make(schemadescriptor.schema, true);
     };
-    FunctionSchema.prototype.reduce = function (value) {
-        if (typeof value === "undefined") {
-            return undefined; // already reduced
-        }
-        return utils.equals(value, this.default) ? undefined : value;
-    };
-
-
-
-    var ArraySchema = function (schema) {
-        this.default = schema.default;
-        this.optional = schema.optional;
-        this.eq = schema.eq;
-        this.in = schema.in;
-        this.test = schema.test;
-        this.min = schema.min;
-        this.max = schema.max;
-        this.schema = schema.schema && factory.make(schema.schema, true);
-        this.onerror = schema.onerror;
-
-        this.qso = _makeSchemaQSO(schema);  // if the schema can be QueryStringObject-ified
-        this.json = _makeSchemaJSON(schema); // if the schema can be JSON-ified
-
-        this._qsoable = _testSchematizedObjectQSO(schema); // are the schematized objects querystringifiable
-        this._jsonable = _testSchematizedObjectJSON(schema); // are the schematized objects stringifiable
-    };
-    ArraySchema.prototype = new Schema();
+    ArraySchema.prototype = Object.create(Schema.prototype);
     ArraySchema.prototype.type = "array";
-    ArraySchema.prototype.rget = function (attr) {
-        if (!attr || attr.length === 0) {
-            return this;
-        }
-    };
-    ArraySchema.prototype.toPSO = function (so) {
-        throw new Error("cannot convert an array to PSO");
-    };
-    ArraySchema.prototype.toQSO = function (so) {
-        if (so) {
-            if (!this._qsoable) {
-                throw new Error("this schematized object cannot be converted to QSO");
-            } else {
-                return parser.stringifyToQSO(so);
-            }
+    ArraySchema.prototype.hasRepresentation = function (rep) {
+        if (!this.schema) {
+            return false;
+        } else if (rep === "qs") {
+            return !["array", "object"].includes(this.schema.type) && this.schema.hasRepresentation("qs");
+        } else if (rep === "so") {
+            return this.schema.hasRepresentation("so");
+        } else if (rep === "json") {
+            return this.schema.hasRepresentation("json");
         } else {
-            if (!this.qso) {
-                throw new Error("this schema cannot be converted to QSO");
-            }
-            return utils.clone(this.qso);
+            return false;
         }
     };
-    ArraySchema.prototype.toJSON = function (so) {
-        if (so) {
-            if (!this._jsonable) {
-                throw new Error("this schematized object cannot be converted to JSON");
-            } else {
-                return parser.stringifyToJSON(so);
-            }
-        } else {
-            if (!this.json) {
-                throw new Error("this schema cannot be converted to JSON");
-            }
-            return utils.clone(this.json);
+
+    ArraySchema.prototype.fromSO = function (soso, strict, noenforce) {
+        strict = strict === false ? false : true;
+        if (strict && !this.hasRepresentation("so")) {
+            throw new Error("objects enforced by this schema cannot be converted from StringObjects");
         }
-    };
-    ArraySchema.prototype.fromPSO = function () {
-        throw new Error("cannot parse an array from PSO");
-    };
-    ArraySchema.prototype.fromQSO = function (qsoso, noenforce) {
-        if (!this._qsoable) {
-            throw new Error("objects applying this schema cannot be parsed from QSO");
+        if (typeof soso === "string"){
+            soso = [soso];
         }
-        if (Array.isArray(qsoso)) {
+        if (Array.isArray(soso)) { // could be undefined if optional
             let schema = this.schema;
-            qsoso = qsoso.map(function (qsoso, index) {
-                return schema.fromQSO(qsoso, true);
+            soso = soso.map(function (soso, index) {
+                return schema.fromSO(soso, strict, true);
             });
         }
-        return noenforce ? qsoso : this.enforce(qsoso); // if head of recursive pile, enforce the schema
+        return noenforce ? soso : this.enforce(soso, false); // if head of recursive pile, enforce the schema
     };
-    ArraySchema.prototype.fromJSON = function (jsonso, noenforce) {
-        if (!this._jsonable) {
-            throw new Error("objects applying this schema cannot be parsed from JSON");
+    ArraySchema.prototype.fromJSON = function (jsonso, strict, noenforce) {
+        strict = strict === false ? false : true;
+        if (strict && !this.hasRepresentation("so")) {
+            throw new Error("objects enforced by this schema cannot be converted from JSON objects");
         }
         if (Array.isArray(jsonso)) {
             let schema = this.schema;
             jsonso = jsonso.map(function (jsonso, index) {
-                return schema.fromJSON(jsonso, true);
+                return schema.fromJSON(jsonso, strict, true);
             });
         }
-        return noenforce ? jsonso : this.enforce(jsonso);
+        return noenforce ? jsonso : this.enforce(jsonso, false);
     };
 
-    ArraySchema.prototype.enforce = function (value, expend, key) {
-        value = Schema.prototype.enforce.call(this, value, expend, key);
-        if (typeof value === "undefined") {
-            return;
+    ArraySchema.prototype.enforce = function (value, key) {
+        key = key || DEFAULT_ROOT_KEY;
+        value = Schema.prototype.enforce.call(this, value, key);
+        if (value === undefined) {
+            return value;
         }
-
-        _enforceType(this, "array", Array.isArray(value) ? "array" : (typeof value), key);
+        if (this.schema) {
+            for (let i = 0; i < value.length; i++) {
+                value[i] = this.schema.enforce(value[i], key + "[" + i + "]");
+            }
+        }
         _enforceEq(this, this.eq, value, key);
         _enforceIn(this, this.in, value, key);
         _enforceMin(this, this.min, value.length, key);
         _enforceMax(this, this.max, value.length, key);
-        if (this.schema) {
-            for (let i = 0; i < value.length; i++) {
-                value[i] = this.schema.enforce(value[i], expend, key + "[" + i + "]");
-            }
-        }
         _enforceTest(this, this.test, value, key);
         return value;
     };
+
     ArraySchema.prototype.expend = function (value) {
-        if (typeof value === "undefined") {
-            value = utils.clone(this.default);
+        if (value === undefined) {
+            value = [];
         }
         if (this.schema) {
             for (let i = 0; i < value.length; i++) {
@@ -649,51 +439,47 @@
         return value;
     };
     ArraySchema.prototype.reduce = function (value) {
-        if (typeof value === "undefined") {
+        if (typeof value === undefined) {
             return undefined; // already reduced
-        }
-        if (this.schema) {
-            for (let i = 0; i < value.length; i++) {
-                value[i] = this.schema.reduce(value[i]);
-                if (typeof value[i] === "undefined") {
-                    value.splice(i, 1);
-                    i--;
-                }
-            }
-        }
-        if (value.length === 0 && this.default) { // default array can only be empty array
+        } else if (value.length === 0) {
             return undefined;
         } else {
             return value;
         }
     };
+    ArraySchema.prototype.makeDefault = function () {
+        return [];
+    };
 
 
 
-    var ObjectSchema = function (schema) {
-        this.default = schema.default;
-        this.optional = schema.optional;
-        this.eq = schema.eq;
-        this.in = schema.in;
-        this.test = schema.test;
-        this.onerror = schema.onerror;
+    var ObjectSchema = function (schemadescriptor) {
+        Schema.call(this, schemadescriptor);
         this.schemas = null;
-        if (schema.schema) {
+        if (schemadescriptor.schema) {
             this.schemas = {};
-            for (let prop in schema.schema) {
-                this.schemas[prop] = factory.make(schema.schema[prop], true);
+            for (let prop in schemadescriptor.schema) {
+                this.schemas[prop] = SchemaFactory.make(schemadescriptor.schema[prop], true);
             }
         }
-
-        this.qso = _makeSchemaQSO(schema);  // if the schema can be QueryStringObject-ified
-        this.json = _makeSchemaJSON(schema); // if the schema can be JSON-ified
-
-        this._psoable = _testSchematizedObjectPSO(schema);
-        this._qsoable = _testSchematizedObjectQSO(schema); // are the schematized objects querystringifiable
-        this._jsonable = _testSchematizedObjectJSON(schema); // are the schematized objects stringifiable
     };
-    ObjectSchema.prototype = new Schema();
+    ObjectSchema.prototype = Object.create(Schema.prototype);
     ObjectSchema.prototype.type = "object";
+    ObjectSchema.prototype.hasRepresentation = function (rep) {
+        if (!this.schemas) {
+            return false;
+        }if (["qs", "so", "json"].includes(rep)) {
+            for (let prop in this.schemas) {
+                if (!this.schemas[prop].hasRepresentation(rep)) {
+                    return false;
+                }
+            }
+            return true;
+        } else {
+            return false;
+        }
+    };
+
     /**
      * Recursive schema getter.
      * 
@@ -702,7 +488,7 @@
      */
     ObjectSchema.prototype.rget = function (attr) {
         if (typeof attr === "string") {
-            attr = attr.splice(".");
+            attr = attr.split(".");
         }
         if (attr.length === 0) {
             return this;
@@ -714,138 +500,66 @@
         }
     };
 
-    /**
-     * Converts a Schematized Object to a PSO.
-     * 
-     * @param {SchematizedObject} so
-     * @returns {PSO}
-     * 
-     * @throws {Error} cannot be converted to PSO
-     */
-    ObjectSchema.prototype.toPSO = function (so) {
-        if (!this._psoable) {
-            throw new Error("this schematized object cannot be converted to PSO");
-        } else {
-            return parser.stringifyToPSO(so);
-        }
-    };
 
     /**
-     * Converts the Schema itself or a Schematized Object to a QSO.
-     * If no Schematized Object is given, the Schema itself is converted to a QSO.
+     * Parses a Schematized Object from a SO.
      * 
-     * @param {SchematizedObject} [so]
-     * @returns {QSO}
-     * 
-     * @throws {Error} cannot be converted to QSO
-     */
-    ObjectSchema.prototype.toQSO = function (so) {
-        if (so) {
-            if (!this._qsoable) {
-                throw new Error("this schematized object cannot be converted to QSO");
-            } else {
-                return parser.stringifyToQSO(so);
-            }
-        } else {
-            if (!this.qso) {
-                throw new Error("this schema cannot be converted to QSO");
-            }
-            return utils.clone(this.qso);
-        }
-    };
-    /**
-     * Converts the Schema itself or a Schematized Object to a valid JSON object.
-     * If no Schematized Object is given, the Schema itself is converted.
-     * 
-     * @param {SchematizedObject} [so]
-     * @returns {JSON}
-     * 
-     * @throws {Error} cannot be converted to JSON
-     */
-    ObjectSchema.prototype.toJSON = function (so) {
-        if (so) {
-            if (!this._jsonable) {
-                throw new Error("this schematized object cannot be converted to JSON");
-            } else {
-                return parser.stringifyToJSON(so);
-            }
-        } else {
-            if (!this.json) {
-                throw new Error("this schema cannot be converted to JSON");
-            }
-            return utils.clone(this.json);
-        }
-    };
-
-
-    /**
-     * Parses a Schematized Object from a PSO.
-     * 
-     * @param {PSO} psoso
-     * @param {boolean} [noenforce=false]
-     * @returns {SchematizedObject}
-     * 
-     * @throws {Error} entities applying this schema cannot be parsed from PSO
-     * @throws {Error} schematized object doesn't match schema
-     */
-    ObjectSchema.prototype.fromPSO = function (psoso, noenforce) {
-        if (!this._psoable) {
-            throw new Error("objects applying this schema cannot be parsed from PSO");
-        }
-        let ret = {};
-        for (let prop in psoso) {
-            if (this.schemas.hasOwnProperty(prop)) {
-                ret[prop] = this.schemas[prop].fromPSO(psoso[prop], true);
-            }
-        }
-        return noenforce ? ret : this.enforce(ret); // if head of recursive pile, enforce the schema
-    };
-
-    /**
-     * Parses a Schematized Object from a QSO.
-     * 
-     * @param {QSO} qsoso
+     * @param {SO} soso
+     * @param {boolean} [strict=true] In strict mode, objects enforcing a schema whose schematized objects
+     *   can not be represented as a StringObject will automatically trigger an error.
      * @param {boolean} [noenforce=false]
      * @returns {SchematizedObject}
      * 
      * @throws {Error} entities applying this schema cannot be parsed from QSO
      * @throws {Error} schematized object doesn't match schema
      */
-    ObjectSchema.prototype.fromQSO = function (qsoso, noenforce) {
-        if (!this._qsoable) {
-            throw new Error("objects applying this schema cannot be parsed from QSO");
+    ObjectSchema.prototype.fromSO = function (soso, strict, noenforce) {
+        strict = strict === false ? false : true;
+        if (strict && !this.hasRepresentation("so")) {
+            throw new Error("objects enforced by this schema cannot be converted from StringObjects");
         }
-        let ret = {};
-        for (let prop in qsoso) {
-            if (this.schemas.hasOwnProperty(prop)) {
-                ret[prop] = this.schemas[prop].fromQSO(qsoso[prop], true);
+        let ret;
+        if (soso !== undefined) {
+            ret = {};
+            for (let prop in soso) {
+                if (this.schemas.hasOwnProperty(prop)) {
+                    ret[prop] = this.schemas[prop].fromSO(soso[prop], true);
+                } else {
+                    ret[prop] = soso[prop]; // doesn't matter, will throw an error when enforced
+                }
             }
         }
-        return noenforce ? ret : this.enforce(ret); // if head of recursive pile, enforce the schema
+        return noenforce ? ret : this.enforce(ret, false); // if head of recursive pile, enforce the schema
     };
     /**
      * Parses a Schematized Object from a JSON object.
      * 
      * @param {JSON} jsonso
+     * @param {boolean} [strict=true] In strict mode, objects enforcing a schema whose schematized objects
+     *   can not be represented in json will automatically trigger an error.
      * @param {boolean} [noenforce=false]
      * @returns {SchematizedObject}
      * 
      * @throws {Error} entities applying this schema cannot be parsed from JSON
      * @throws {Error} schematized object doesn't match schema
      */
-    ObjectSchema.prototype.fromJSON = function (jsonso, noenforce) {
-        if (!this._jsonable) {
-            throw new Error("objects applying this schema cannot be parsed from JSON");
+    ObjectSchema.prototype.fromJSON = function (jsonso, strict, noenforce) {
+        strict = strict === false ? false : true;
+        if (strict && !this.hasRepresentation("json")) {
+            throw new Error("objects enforced by this schema cannot be converted from JSON objects");
         }
-        if (typeof jsonso === "object") {
-            let ret = {};
+        let ret;
+        if (jsonso !== undefined) {
+            ret = {};
             for (let prop in jsonso) {
                 if (this.schemas.hasOwnProperty(prop)) {
                     ret[prop] = this.schemas[prop].fromJSON(jsonso[prop], true);
+                } else {
+                    ret[prop] = jsonso[prop]; // doesn't matter, will throw an error when enforced
                 }
             }
         }
-        return noenforce ? ret : this.enforce(ret);
+        return noenforce ? ret : this.enforce(ret, false);
     };
 
     /**
@@ -853,19 +567,18 @@
      * Returns a clone of the original Schematized Object.
      * 
      * @param {SchematizedObject} value
-     * @param {boolean} [expend=true] Add missing optional values to the target.
      * @param {string} [key] Used by errors to be more descriptive of the schema transgression.
      * @returns {SchematizedObject}
      * 
      * @throws {Error} Schematized Object doesn't match the Schema
      */
-    ObjectSchema.prototype.enforce = function (value, expend, key) {
-        value = Schema.prototype.enforce.call(this, value, expend, key);
-        if (typeof value === "undefined") {
-            return;
+    ObjectSchema.prototype.enforce = function (value, key) {
+        key = key || DEFAULT_ROOT_KEY;
+        value = Schema.prototype.enforce.call(this, value, key);
+        if (value === undefined) {
+            return value;
         }
 
-        _enforceType(this, "object", typeof value, key);
         _enforceEq(this, this.eq, value, key);
         _enforceIn(this, this.in, value, key);
         if (this.schemas) {
@@ -876,7 +589,7 @@
                 }
             }
             for (let prop in this.schemas) {
-                value[prop] = this.schemas[prop].enforce(value[prop], expend, key + "." + prop);
+                value[prop] = this.schemas[prop].enforce(value[prop], key + "." + prop);
             }
         }
         _enforceTest(this, this.test, value, key);
@@ -885,19 +598,17 @@
     };
 
     /**
-     * Expends the missing optional values of a Schematized Object. The new properties 
-     * are cloned from the Schema default values.
+     * Expends the missing optional values of a Schematized Object.
      * 
      * @param {SchematizedObject} value
      * @returns {SchematizedObject}
      */
     ObjectSchema.prototype.expend = function (value) {
-        if (typeof value === "undefined") {
-            value = utils.clone(this.default);
+        if (value === undefined) {
+            value = {};
         }
         if (this.schemas) {
             for (let prop in this.schemas) {
-                value = value || {};
                 value[prop] = this.schemas[prop].expend(value[prop]);
             }
         }
@@ -909,27 +620,37 @@
      * values of the Schema.
      * 
      * @param {SchematizedObject} value
-     * @returns {SchematizedObject}
+     * @returns {SchematizedObject|undefined} The same SchematizedObject, or undefined
      */
     ObjectSchema.prototype.reduce = function (value) {
-        if (typeof value === "undefined") {
+        if (value === undefined) {
             return undefined; // already reduced
         }
         if (this.schemas) {
-            let ret;
             for (let prop in value) {
-                if (!(ret = this.schemas[prop].reduce(value[prop]))) {
+                let reducedprop = this.schemas[prop].reduce(value[prop]);
+                if (reducedprop === undefined) {
                     delete value[prop];
                 } else {
-                    value[prop] = ret;
+                    value[prop] = reducedprop;
                 }
             }
         }
-        if (this.default && utils.equals(value, {})) { // default object can only be empty object
+        if (utils.equals(value, {})) { // default object can only be empty object
             return undefined;
         } else {
             return value;
         }
+    };
+
+    ObjectSchema.prototype.makeDefault = function () {
+        let def = {};
+        if (this.schemas) {
+            for (let prop in this.schemas) {
+                def[prop] = this.schemas[prop].makeDefault();
+            }
+        }
+        return def;
     };
 
 
@@ -1002,16 +723,16 @@
      * 
      * @exports schema
      */
-    var factory = {};
+    var SchemaFactory = {};
     /**
      * Schemas describing the supported syntax of schemas by type.
      * They are used to enforce the validity of new schemas to construct
      */
-    factory.schemas = {};
+    SchemaFactory.schemas = {};
     /**
      * Schemas constructors by type
      */
-    factory.constructors = {
+    SchemaFactory.constructors = {
         "string": StringSchema,
         "number": NumberSchema,
         "boolean": BooleanSchema,
@@ -1026,10 +747,10 @@
         if (typeof schemadesc !== "object") {
             throw new Error("invalid schema: must be an object");
         }
-        if (!factory.schemas.hasOwnProperty(schemadesc.type)) {
+        if (!SchemaFactory.schemas.hasOwnProperty(schemadesc.type)) {
             throw new Error("invalid schema: invalid type: " + schemadesc.type);
         }
-        factory.schemas[schemadesc.type].enforce(schemadesc);
+        SchemaFactory.schemas[schemadesc.type].enforce(schemadesc);
         return true;
     };
     var _testPartialSchema = function (partialdesc, key) {
@@ -1052,7 +773,7 @@
      * @param {boolean} [_noenforce=false]
      * @returns {Schema}
      */
-    factory.make = function (descriptor, _noenforce) {
+    SchemaFactory.make = function (descriptor, _noenforce) {
         if (!_noenforce) {
             try {
                 _testSchema(descriptor);
@@ -1061,7 +782,7 @@
                 throw err;
             }
         }
-        return new factory.constructors[descriptor.type](descriptor);
+        return new SchemaFactory.constructors[descriptor.type](descriptor);
     };
 
 
@@ -1069,11 +790,11 @@
      * The schemas desribing the authorized syntax of schemas by type
      */
     ["string", "number", "object", "date", "boolean", "function", "regex", "array"].forEach(function (type) {
-        factory.schemas[type] = {
+        SchemaFactory.schemas[type] = {
             type: "object",
             schema: {}
         };
-        let _schema = factory.schemas[type].schema;
+        let _schema = SchemaFactory.schemas[type].schema;
         _schema.type = {type: "string", eq: type};
         _schema.default = {type: type, optional: true};
         _schema.optional = {type: "boolean", optional: true};
@@ -1083,22 +804,22 @@
         _schema.onerror = {type: "function", optional: true};
     });
     ["string", "number", "array", "date"].forEach(function (type) {
-        let _schema = factory.schemas[type].schema;
+        let _schema = SchemaFactory.schemas[type].schema;
         _schema.min = {type: "number", optional: true};
         _schema.max = {type: "number", optional: true};
     });
-    factory.schemas.object.schema.schema = {type: "object", test: _testPartialSchema, optional: true};
-    factory.schemas.array.schema.schema = {type: "object", test: _testSchema, optional: true};
-    factory.schemas.object.schema.default.eq = {};
-    factory.schemas.array.schema.default.eq = [];
-    factory.schemas.string.schema.regex = {type: "regex", optional: true};
-    factory.schemas.number.schema.nan = {type: "boolean", optional: true};
+    SchemaFactory.schemas.object.schema.schema = {type: "object", test: _testPartialSchema, optional: true};
+    SchemaFactory.schemas.array.schema.schema = {type: "object", test: _testSchema, optional: true};
+    delete SchemaFactory.schemas.object.schema.default;
+    delete SchemaFactory.schemas.array.schema.default;
+    SchemaFactory.schemas.string.schema.regex = {type: "regex", optional: true};
+    SchemaFactory.schemas.number.schema.nan = {type: "boolean", optional: true};
 
-    for (let type in factory.schemas) {
-        factory.schemas[type] = new factory.constructors[factory.schemas[type].type](factory.schemas[type]);
+    for (let type in SchemaFactory.schemas) {
+        SchemaFactory.schemas[type] = new SchemaFactory.constructors[SchemaFactory.schemas[type].type](SchemaFactory.schemas[type]);
     }
 
-    return factory;
+    return SchemaFactory;
 });
 
 
