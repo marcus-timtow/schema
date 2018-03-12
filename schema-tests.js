@@ -1,6 +1,6 @@
 
-let Schema = require("./schema");
-let QS = require("./qs");
+let SchemaFactory = require("./schema");
+let QS = require("../QS/qs");
 
 let idpageschemadesc = {
     type: "object",
@@ -22,7 +22,7 @@ let idpageschemadesc = {
     }
 };
 console.log("making schema... ");
-let idpageschema = Schema.make(idpageschemadesc);
+let idpageschema = SchemaFactory.make(idpageschemadesc);
 console.log("done");
 
 let ids = [
@@ -61,7 +61,7 @@ console.log("done");
 
 console.log("stringifying valid ids...");
 validids.forEach(function (id) {
-    console.log(QS.stringify(idpageschema.toQSO(id)));
+    console.log(QS.stringify(idpageschema.toSO(id)));
     console.log(JSON.stringify(idpageschema.toJSON(id), null, 4));
 });
 console.log("done");
