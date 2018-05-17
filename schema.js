@@ -18,18 +18,9 @@
             return that[dep.split("/").pop()];
         }));
     }
-})("SchemaFactory", ["../utils/utils", "../parser/parser"], function (utils, parser) {
+})("SchemaFactory", ["../utils/utils", "../parser/parser", "./syntax-error"], function (utils, parser, SyntaxError) {
 
     const DEFAULT_ROOT_KEY = "target";
-
-    let makeError = function (schema, key, value, err) {
-        if (schema.onerror) {
-            let _err = this.onerror(key, value, schema, err);
-            _err.originalError = err;
-            err = _err;
-        }
-        return err;
-    };
 
     let _enforceIn = function (schema, values, value, key) {
         if (!Array.isArray(values)) {
@@ -42,59 +33,50 @@
             }
         }
 
-        let err = new Error("invalid " + key + " value: " + value + ". value must be in [" + values.join(", ") + "]");
-        throw makeError(schema, key, value, err);
+        throw new SyntaxError("required value in [" + values.join(", ") + "]", {key: key, value: value, schema: schema});
     };
     let _enforceEq = function (schema, value2, value, key) {
         if (typeof value2 === "undefined") {
             return;
         }
         if (!utils.equals(value, value2)) {
-            let err = new Error("invalid " + key + " value: " + value + ". value must be " + value2);
-            throw makeError(schema, key, value, err);
+            throw new SyntaxError("required " + value2, {key: key, value: value, schema: schema});
         }
     };
     let _enforceMin = function (schema, min, value, key) {
         if (typeof min === "number" && value < min) {
-            let err = new Error("invalid " + key + " value: " + value + ". value must be greater than " + min);
-            throw makeError(schema, key, value, err);
+            throw new SyntaxError("required value greater than" + min, {key: key, value: value, schema: schema});
         }
     };
     let _enforceMax = function (schema, max, value, key) {
         if (typeof max === "number" && value > max) {
-            let err = new Error("invalid " + key + " value: " + value + ". value must be lesser than " + max);
-            throw makeError(schema, key, value, err);
+            throw new SyntaxError("required value lesser than" + max, {key: key, value: value, schema: schema});
         }
     };
     let _enforceNan = function (schema, value, key) {
         if (Number.isNaN(value)) {
-            let err = new Error("invalid " + key + " value: " + value + ". value must be a number");
-            throw makeError(schema, key, value, err);
+            throw new SyntaxError("value must be a number", {key: key, value: value, schema: schema});
         }
     };
     let _enforceTest = function (schema, test, value, key) {
         if (typeof test === "function") {
             let res = test(value, key, schema);
             if (!res) {
-                let err = new Error("invalid " + key + " value: " + value);
-                throw makeError(schema, key, value, err);
+                throw new SyntaxError({key: key, value: value, schema: schema});
             }
             if (typeof res === "string") {
-                let err = new Error("invalid " + key + " value: " + value + ". " + res);
-                throw makeError(schema, key, value, err);
+                throw new SyntaxError(res, {key: key, value: value, schema: schema});
             }
         }
     };
     let _enforceRegex = function (schema, regex, value, key) {
         if (regex && !regex.test(value, key)) {
-            let err = new Error("invalid " + key + " value: " + value + ". value must match " + regex.toString());
-            throw makeError(schema, key, value, err);
+            throw new SyntaxError("value must match " + regex.toString(), {key: key, value: value, schema: schema});
         }
     };
     let _enforceType = function (schema, type, valuetype, key) {
         if (valuetype !== type) {
-            let err = new Error("invalid " + key + " type: " + valuetype + ". value must be typed " + type);
-            throw makeError(schema, key, valuetype, err);
+            throw new SyntaxError("value must be typed " + type, {key: key, value: valuetype, schema: schema});
         }
     };
 
@@ -162,8 +144,7 @@
                 value = this.makeDefault();
                 if (value === undefined) {
                     key = key || DEFAULT_ROOT_KEY;
-                    let err = new Error("invalid " + key + " value: " + "property required");
-                    throw makeError(this, key, value, err);
+                    throw new SyntaxError("property required", {key: key, value: value, schema: this});
                 }
             }
         }
@@ -383,7 +364,7 @@
         if (strict && !this.hasRepresentation("so")) {
             throw new Error("objects enforced by this schema cannot be converted from StringObjects");
         }
-        if (typeof soso === "string"){
+        if (typeof soso === "string") {
             soso = [soso];
         }
         if (Array.isArray(soso)) { // could be undefined if optional
@@ -468,7 +449,8 @@
     ObjectSchema.prototype.hasRepresentation = function (rep) {
         if (!this.schemas) {
             return false;
-        }if (["qs", "so", "json"].includes(rep)) {
+        }
+        if (["qs", "so", "json"].includes(rep)) {
             for (let prop in this.schemas) {
                 if (!this.schemas[prop].hasRepresentation(rep)) {
                     return false;
@@ -584,8 +566,7 @@
         if (this.schemas) {
             for (let prop in value) {
                 if (!this.schemas.hasOwnProperty(prop)) {
-                    let err = new Error("invalid " + key + " value: invalid property: " + prop);
-                    throw makeError(this, key, value, err);
+                    throw new SyntaxError("invalid property: " + prop, {key: key, value: value, schema: this});
                 }
             }
             for (let prop in this.schemas) {
